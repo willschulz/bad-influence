@@ -1,0 +1,344 @@
+---
+title: "Policing Treatment File Generator"
+author: "Will Schulz"
+date: "2023-03-07"
+output: html_document
+---
+
+```{r}
+outfile = "treatments.policing.yaml"
+if(file.exists(outfile)){unlink(outfile)}
+```
+
+
+```{r}
+leader_dur = 60
+group_dur = 200
+
+pretest_dur = 150
+prediscussion_instruction_dur = 45
+initial_instruction_dur = 30
+chime_dur = 5
+
+outro_dur = 30
+```
+
+
+```{r}
+dq_names <- c("police_overall_feel", "police_involve", "police_racism", "police_anes_riot", "police_anes_excess_force", "police_order_violence", "police_gss_situations_strike", "police_force_easy_hard")
+
+pretest_questions <- c("police_involve_survey.md",
+"police_racism_survey.md",
+"police_anes_riot_survey.md",
+"police_anes_excess_force_survey.md",
+"police_force_easy_hard_survey.md",
+"police_gss_situations_strike_survey.md",
+"police_overall_feel_survey.md")
+
+posttest_questions <- c("police_involve_survey.md",
+                        "police_racism_survey.md",
+                        "police_anes_riot_survey.md",
+                        "police_anes_excess_force_survey.md",
+                        "police_force_easy_hard_survey.md",
+                        "police_gss_situations_strike_survey.md",
+                        "police_overall_feel_survey.md"
+                        )
+
+exit_surveys <- c("ConstructiveListeningBehaviors", 
+"DiscussionSelfInsight", 
+"AutonomyNeedSatisfaction", 
+"RelatednessNeedSatisfaction", 
+"Demographics")
+```
+
+
+```{r}
+#functions
+dq_add_leader <- function(dq_name, t0, leader_dur, group_dur, chime_dur = 5, outfile){
+  t1 = t0 + leader_dur
+  t2 = t0 + leader_dur + group_dur
+  
+  dqit <- c("          - type: prompt",
+            paste0("            file: projects/bad_influence/",dq_name,"_discussion.md"),
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t2),
+            "          - type: separator",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t2),
+            "          - type: prompt",
+            "            file: projects/bad_influence/first_speaker_time_footer.md",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t1),
+            "          - type: prompt",
+            "            file: projects/bad_influence/leader_floor.md",
+            "            showToPositions:",
+            "              - 0",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t1),
+            "          - type: prompt",
+            "            file: projects/bad_influence/nonleader_nofloor.md",
+            "            hideFromPositions:",
+            "              - 0",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t1),
+            "          - type: timer",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t1),
+            "          - type: audio",
+            "            file: shared/counter_bell.mp3",
+            paste0("            displayTime: ",t1),
+            paste0("            hideTime: ",t1 + chime_dur),
+            "          - type: prompt",
+            "            file: projects/bad_influence/group_free_discussion_time_footer.md",
+            paste0("            displayTime: ",t1),
+            paste0("            hideTime: ",t2),
+            "          - type: timer",
+            paste0("            displayTime: ",t1),
+            paste0("            hideTime: ",t2),
+            "          - type: audio",
+            "            file: shared/counter_bell.mp3",
+            paste0("            displayTime: ",t2),
+            paste0("            hideTime: ",t2 + chime_dur),
+            "")
+  
+  
+  write(dqit, file = outfile, append = T)
+}
+
+
+dq_add_noleader <- function(dq_name, t0, leader_dur, group_dur, chime_dur = 5, outfile){
+  t1 = t0 + leader_dur
+  t2 = t0 + leader_dur + group_dur
+  
+  dqit <- c("          - type: prompt",
+            paste0("            file: projects/bad_influence/",dq_name,"_discussion.md"),
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t2),
+            "          - type: prompt",
+            "            file: projects/bad_influence/group_free_discussion_time_footer.md",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t2),
+            "          - type: timer",
+            paste0("            displayTime: ",t0),
+            paste0("            hideTime: ",t2),
+            "          - type: audio",
+            "            file: shared/counter_bell.mp3",
+            paste0("            displayTime: ",t2),
+            paste0("            hideTime: ",t2 + chime_dur),
+            "")
+  
+  write(dqit, file = outfile, append = T)
+}
+
+
+```
+
+
+
+
+```{r}
+#churn out treatment file
+discussion_total_dur = initial_instruction_dur + length(dq_names)*(leader_dur+group_dur) + outro_dur
+
+intro_sequences <- c("introSequences:",
+                     "  - name: cross_party_match",
+                     "    desc: For pairing cross partisans",
+                     "    introPayment:",
+                     "      value: 1",
+                     "      currencySymbol: $",
+                     "    introSteps:",
+                     "      - name: Political Leanings Survey",
+                     "        elements:",
+                     "          - type: survey",
+                     "            surveyName: PoliticalPartyUS",
+                     "",
+                     "treatments:"
+                     )
+
+write(intro_sequences, file = outfile, append = T)
+
+prelude_leader <- c("  - name: assigned_leader",
+             "    desc: Three questions, randomized first speaker",
+             "",
+             "    playerCount: 3",
+             "    assignPositionsBy: random",
+             "    gameStages:",
+             "      - name: Pretest",
+             paste0("        duration: ", pretest_dur),
+             "        elements:",
+             paste0("          - projects/bad_influence/", pretest_questions),
+             "          - type: submitButton",
+             "      - name: Pre-discussion instructions",
+             paste0("        duration: ", prediscussion_instruction_dur),
+             "        elements:",
+             "          - projects/bad_influence/pre_instructions_assigned_leader.md",
+             "          - type: submitButton",
+             "      - name: Discussion",
+             "        chatType: video",
+             paste0("        duration: ", discussion_total_dur),
+             "        elements:",
+             "          - type: prompt",
+             "            file: projects/bad_influence/initial_instructions.md",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: prompt",
+             "            file: projects/bad_influence/identify_leader.md",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: prompt",
+             "            file: projects/bad_influence/leader_notification.md",
+             "            showToPositions:",
+             "              - 0",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: prompt",
+             "            file: projects/bad_influence/nonleader_notification.md",
+             "            hideFromPositions:",
+             "              - 0",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: timer",
+             "            displayTime: 0",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: audio",
+             "            file: shared/counter_bell.mp3",
+             paste0("            displayTime: ", initial_instruction_dur),
+             paste0("            hideTime: ", initial_instruction_dur + chime_dur)
+             )
+
+write(prelude_leader, file = outfile, append = T)
+
+for (i in seq_along(dq_names)){
+  print(dq_names[i])
+  dq_add_leader(dq_name = dq_names[i], t0 = initial_instruction_dur + (i-1)*(leader_dur+group_dur), leader_dur = leader_dur, group_dur = group_dur, outfile = outfile)
+}
+
+
+outro <- c("          - type: prompt",
+           "            file: projects/bad_influence/end_instructions.md",
+           paste0("            displayTime: ", initial_instruction_dur + length(dq_names)*(leader_dur+group_dur)),
+           "          - type: submitButton",
+           paste0("            displayTime: ", initial_instruction_dur + length(dq_names)*(leader_dur+group_dur)),
+           ""
+           )
+
+write(outro, file = outfile, append = T)
+
+posttest <- c("      - name: Posttest",
+              "        duration: 150",
+              "        elements:",
+              paste0("          - projects/bad_influence/", posttest_questions),
+              "          - type: submitButton",
+              ""
+              )
+
+write(posttest, file = outfile, append = T)
+
+
+exitsurvey <- c(
+              "    exitSurveys:",
+              paste0("      - ", exit_surveys),
+              ""
+              )
+
+write(exitsurvey, file = outfile, append = T)
+
+
+#### noleader
+
+prelude_noleader <- c("  - name: No Leader Assigned",
+             "    desc: Three questions, no instructions for leader",
+             "",
+             "    playerCount: 3",
+             "    assignPositionsBy: random",
+             "    gameStages:",
+             "      - name: Pretest",
+             paste0("        duration: ", pretest_dur),
+             "        elements:",
+             paste0("          - projects/bad_influence/", pretest_questions),
+             "          - type: submitButton",
+             "      - name: Pre-discussion instructions",
+             paste0("        duration: ", prediscussion_instruction_dur),
+             "        elements:",
+             "          - projects/bad_influence/pre_instruction_no_leader.md",
+             "          - type: submitButton",
+             "      - name: Discussion",
+             "        chatType: video",
+             paste0("        duration: ", discussion_total_dur),
+             "        elements:",
+             "          - type: prompt",
+             "            file: projects/bad_influence/initial_instructions.md",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: prompt",
+             "            file: projects/bad_influence/introduce_yourself.md",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: timer",
+             "            displayTime: 0",
+             paste0("            hideTime: ", initial_instruction_dur),
+             "          - type: audio",
+             "            file: shared/counter_bell.mp3",
+             paste0("            displayTime: ", initial_instruction_dur),
+             paste0("            hideTime: ", initial_instruction_dur + chime_dur),
+             ""
+             )
+
+write(prelude_noleader, file = outfile, append = T)
+
+for (i in seq_along(dq_names)){
+  print(dq_names[i])
+  dq_add_noleader(dq_name = dq_names[i], t0 = initial_instruction_dur + (i-1)*(leader_dur+group_dur), leader_dur = leader_dur, group_dur = group_dur, outfile = outfile)
+}
+
+outro <- c("          - type: prompt",
+           "            file: projects/bad_influence/end_instructions.md",
+           paste0("            displayTime: ", initial_instruction_dur + length(dq_names)*(leader_dur+group_dur)),
+           "          - type: submitButton",
+           paste0("            displayTime: ", initial_instruction_dur + length(dq_names)*(leader_dur+group_dur)),
+           ""
+           )
+
+write(outro, file = outfile, append = T)
+
+posttest <- c("      - name: Posttest",
+              "        duration: 150",
+              "        elements:",
+              paste0("          - projects/bad_influence/", posttest_questions),
+              "          - type: submitButton",
+              ""
+              )
+
+write(posttest, file = outfile, append = T)
+
+
+exitsurvey <- c(
+              "    exitSurveys:",
+              paste0("      - ", exit_surveys),
+              ""
+              )
+
+write(exitsurvey, file = outfile, append = T)
+```
+
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
