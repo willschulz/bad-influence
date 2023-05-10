@@ -25,7 +25,9 @@ outro_dur = 30
 
 
 ```{r}
-dq_names <- c("police_overall_feel", "police_involve", "police_racism", "police_anes_riot", "police_anes_excess_force", "police_order_violence", "police_gss_situations_strike", "police_force_easy_hard")
+#dq_names <- c("police_overall_feel", "police_involve", "police_racism", "police_anes_riot", "police_anes_excess_force", "police_order_violence", "police_gss_situations_strike", "police_force_easy_hard")
+
+dq_names <- c("police_overall_feel", "police_racism", "police_involve", "police_anes_riot", "police_order_violence", "police_gss_situations_strike")
 
 pretest_questions <- c("police_involve_survey.md",
 "police_racism_survey.md",
