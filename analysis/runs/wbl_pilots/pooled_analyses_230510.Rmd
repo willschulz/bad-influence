@@ -57,11 +57,8 @@ raw_data$timeArrived <- as.POSIXct(raw_data$timeArrived/1000, origin = "1970-01-
 
 ```{r}
 # recordingIds_tosave <- raw_data$recordingIds
-# 
 # names(recordingIds_tosave) <- raw_data$deliberationId
-# 
 # recordingIds_tosave
-# 
 # jsonlite::write_json(recordingIds_tosave, path = "recordingIds_for_chris.json")
 ```
 
@@ -86,8 +83,6 @@ a <- sapply(prompts, function(x) unlist(x[prompt_names], recursive = F))
 for (i in which(sapply(a, is.null))){a[[i]] <- empty_vec}
 b <- (t(sapply(a, function(x) as.numeric(x[prompt_names]))))
 colnames(b) <- prompt_names %>% str_replace(pattern = ".*/bad_influence/police_", "")
-
-#b
 ```
 
 
@@ -281,16 +276,6 @@ for (i in 1:nrow(d_t)){
 ```
 
 
-```{r}
-# d_t$position
-# 
-# d_t$alter_leader_police_additive_pre[which(d_t$position != 0)]
-# d_t$alter_nonleader_police_additive_pre[which(d_t$position != 0)]
-# 
-# d_t$alter_leader_police_pca_pre[which(d_t$position != 0)]
-# d_t$alter_nonleader_police_pca_pre[which(d_t$position != 0)]
-```
-
 
 ```{r}
 d_t_nonleader <- d_t %>% filter(position!=0)
@@ -457,8 +442,7 @@ stan_dat <- list(N = nrow(d_clean),
                  male = d_clean$gender=="male",
                  pid_strength = d_clean$pid_strength
                  )
-
-stan_dat
+#stan_dat
 ```
 
 
