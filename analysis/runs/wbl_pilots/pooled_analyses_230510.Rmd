@@ -1,0 +1,665 @@
+---
+title: "Pooled WBL Analyses"
+author: "Will Schulz"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(jsonlite)
+library(sandwich)
+library(stargazer)
+```
+
+
+# Data Parsing & Cleaning
+
+```{r}
+# Load & Parse JSON to friendly-ish dataframe
+
+lines <- c(read_lines("../../../data/batch_WBL_Pilot_1_01GW7XWRTED6ESDBC6YCZXMYK9.jsonl"),
+           read_lines("../../../data/batch_WBL_Pilot_2_01GWMV07SHB8GEEMR6AV5ATGYR.jsonl"),
+           read_lines("../../../data/batch_WBL_Pilot_3_01GZH6BMFYWDC8QBSX0Z841KXX.jsonl")
+           )
+
+json <- lines %>% lapply(., jsonlite::fromJSON)
+
+str(json[[7]]$recordingIds)
+str(json[[7]]$consent)
+str(json[[8]]$recordingIds)
+
+raw_data <- json %>% sapply(function(x) x[which(sapply(x, function(y) (length(y)==1 & !is.list(y))))]) %>% do.call(bind_rows, .)
+
+raw_data$recordingIds <- json %>% sapply(function(x) x$recordingIds)
+
+lists <- list()
+for (i in c("consent", "config", "introSequence")){
+  lists[[i]] <- json %>% sapply(function(x) x[[i]]) %>% apply(., 2, list) %>% unlist(., recursive = F)
+}
+
+for (i in c("treatment", "surveys", "prompts", "qualtrics", "QCSurvey", "exportErrors")){
+  lists[[i]] <- json %>% sapply(function(x) x[[i]])
+}
+
+raw_data <- cbind(raw_data, do.call(cbind, lists))
+#raw_data
+
+rm(lists, json, i)
+```
+
+
+```{r}
+#parse timeArrived
+raw_data$timeArrived <- as.POSIXct(raw_data$timeArrived/1000, origin = "1970-01-01 UTC")
+```
+
+
+```{r}
+# recordingIds_tosave <- raw_data$recordingIds
+# 
+# names(recordingIds_tosave) <- raw_data$deliberationId
+# 
+# recordingIds_tosave
+# 
+# jsonlite::write_json(recordingIds_tosave, path = "recordingIds_for_chris.json")
+```
+
+
+## Clean Survey/Prompts
+
+```{r}
+get_value <- function(x){
+  return(x$value)
+}
+
+prompts <- sapply(raw_data$prompts, sapply, get_value)
+prompt_names <- unique(names(unlist(prompts)))
+```
+
+
+```{r}
+empty_vec <- rep(NA, length(prompt_names))
+names(empty_vec) <- prompt_names
+
+a <- sapply(prompts, function(x) unlist(x[prompt_names], recursive = F))
+for (i in which(sapply(a, is.null))){a[[i]] <- empty_vec}
+b <- (t(sapply(a, function(x) as.numeric(x[prompt_names]))))
+colnames(b) <- prompt_names %>% str_replace(pattern = ".*/bad_influence/police_", "")
+
+#b
+```
+
+
+```{r}
+d <- cbind(raw_data, b)
+```
+
+
+## Process Survey Data
+
+What are the levels of the variable "education"?
+
+Did we measure ideology?
+
+What does "independent importance" mean?  How was this question asked?
+
+
+```{r include = F}
+# do surveys next
+#raw_data$surveys[[1]]
+#str(raw_data$surveys[[1]])
+
+raw_data$surveys[[13]]$survey_PoliticalPartyUS_intro_3$responses
+
+raw_data$surveys[[1]]$survey_PoliticalPartyUS_intro_3
+
+raw_data$surveys[[1]]$survey_PoliticalPartyUS_intro_3$responses$party
+raw_data$surveys[[1]]$survey_PoliticalPartyUS_intro_3$responses$democratStrength
+raw_data$surveys[[1]]$survey_PoliticalPartyUS_intro_3$responses$democratImportance
+
+raw_data$surveys[[2]]$survey_PoliticalPartyUS_intro_3$responses$independentLean
+raw_data$surveys[[2]]$survey_PoliticalPartyUS_intro_3$responses$independentImportance
+
+raw_data$surveys[[19]]$survey_PoliticalPartyUS_intro_3$responses$republicanStrength
+raw_data$surveys[[19]]$survey_PoliticalPartyUS_intro_3$responses$republicanImportance
+```
+
+
+```{r}
+d$gender <- sapply(raw_data$surveys, function(x) x$survey_Demographics_exit_4$responses$gender) %>% as.character()
+d$gender[which(d$gender == "NULL")] <- NA
+
+d$education <- sapply(raw_data$surveys, function(x) x$survey_Demographics_exit_4$responses$education_US) %>% as.character()
+d$education[which(d$education == "NULL")] <- NA
+
+d$party <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$party) %>% as.character()
+d$party[which(d$party == "NULL")] <- NA
+
+d$democratStrength <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$democratStrength) %>% as.character()
+d$democratStrength[which(d$democratStrength == "NULL")] <- NA
+
+d$democratImportance <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$democratImportance) %>% as.character()
+d$democratImportance[which(d$democratImportance == "NULL")] <- NA
+
+d$republicanStrength <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$republicanStrength) %>% as.character()
+d$republicanStrength[which(d$republicanStrength == "NULL")] <- NA
+
+d$republicanImportance <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$republicanImportance) %>% as.character()
+d$republicanImportance[which(d$republicanImportance == "NULL")] <- NA
+
+d$independentLean <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$independentLean) %>% as.character()
+d$independentLean[which(d$independentLean == "NULL")] <- NA
+
+d$independentImportance <- sapply(raw_data$surveys, function(x) x$survey_PoliticalPartyUS_intro_3$responses$independentImportance) %>% as.character()
+d$independentImportance[which(d$independentImportance == "NULL")] <- NA
+
+#d
+```
+
+
+```{r}
+# construct partisanship scale
+
+d <- d %>% mutate(pid_7 = case_when(democratStrength == "Strong Democrat" ~ (-3),
+                                    democratStrength == "Not very strong Democrat" ~ (-2),
+                                    independentLean == "Closer to Democratic Party" ~ (-1),
+                                    independentLean == "Neither" ~ (0),
+                                    independentLean == "Closer to Republican Party" ~ (1),
+                                    republicanStrength == "Not very strong Republican" ~ (2),
+                                    republicanStrength == "Strong Republican" ~ (3),
+                                    ),
+                  pid_strength = abs(pid_7))
+
+#d
+```
+
+
+
+```{r}
+# constructive listening, other satisfaction...
+
+```
+
+
+
+# Cleaning and Processing
+
+## Make Additive and PCA Indices of policing qs
+
+```{r}
+pre_pca <- psych::principal(d %>% select(ends_with("stage_0")), nfactors = 1, rotate = "varimax", missing=TRUE, impute = "mean")#$scores[,1]
+# pre_pca
+# str(pre_pca$loadings)
+# pre_pca$scores
+```
+
+
+```{r}
+policing_loading_signs <- sign(pre_pca$loadings[1:7])
+#policing_loading_signs
+```
+
+
+```{r}
+#make additive scale
+d$police_additive_pre <- d %>% select(ends_with("stage_0")) %>% as.matrix %>% {. %*% policing_loading_signs}
+d$police_additive_post <- d %>% select(ends_with("stage_3")) %>% as.matrix %>% {. %*% policing_loading_signs}
+
+
+#impute missing with pca
+d$police_pca_pre <- pre_pca$scores %>% as.numeric
+d$police_pca_post <- psych::predict.psych(pre_pca, data = d %>% select(ends_with("stage_3")), impute = "means") %>% as.numeric
+
+#drop PCA to NA wherever respondent answered less than half of relevant questions
+d$police_pca_pre[d %>% select(ends_with("stage_0")) %>% as.matrix %>% is.na %>% rowMeans() %>% {.>.7}] <- NA
+d$police_pca_post[d %>% select(ends_with("stage_3")) %>% as.matrix %>% is.na %>% rowMeans() %>% {.>.7}] <- NA
+```
+
+
+## Define Treatment Variable
+
+```{r}
+for (i in 1:nrow(d)){
+  #print(i)
+  #try(d$group_treatment[i] <- if_else(d$treatment[[i]]$name=="assigned_leader", true = 1, false = 0), silent = T)
+  if (!is.null(d$treatment[[i]]$name)){
+    d$group_treatment[i] <- if_else(d$treatment[[i]]$name=="assigned_leader", true = 1, false = 0)
+  } else {d$group_treatment[i] <- NA}
+}
+```
+
+
+# Analyses
+
+
+## Group Polarization
+
+```{r}
+mean(abs(d$police_pca_pre), na.rm = T)
+mean(abs(d$police_pca_post), na.rm = T)
+
+d$police_pca_pre %>% hist
+d$police_pca_post %>% hist
+
+d$police_pca_pre %>% var(., na.rm = T)
+d$police_pca_post %>% var(., na.rm = T)
+
+var.test(d$police_pca_post, d$police_pca_pre) #not significant
+```
+
+
+
+## Leader Influence in Treated Groups
+
+```{r}
+d_t <- d %>% filter(group_treatment==1)
+#d_t
+```
+
+
+```{r}
+#d_t_nonleader$alter_nonleader_police_additive_pre <- 
+
+for (i in 1:nrow(d_t)){
+  d_t$alter_leader_police_additive_pre[i] <- NA
+  d_t$alter_nonleader_police_additive_pre[i] <- NA
+  d_t$alter_leader_police_pca_pre[i] <- NA
+  d_t$alter_nonleader_police_pca_pre[i] <- NA
+  if (d_t$position[i] != 0){
+    d_t$alter_nonleader_police_additive_pre[i] <- d_t %>% filter((gameId == d_t$gameId[i]) & (deliberationId != d_t$deliberationId[i])) %>% filter(position != 0) %>% pull(police_additive_pre)
+    d_t$alter_leader_police_additive_pre[i] <- d_t %>% filter((gameId == d_t$gameId[i]) & (deliberationId != d_t$deliberationId[i])) %>% filter(position == 0) %>% pull(police_additive_pre)
+    d_t$alter_nonleader_police_pca_pre[i] <- d_t %>% filter((gameId == d_t$gameId[i]) & (deliberationId != d_t$deliberationId[i])) %>% filter(position != 0) %>% pull(police_pca_pre)
+    d_t$alter_leader_police_pca_pre[i] <- d_t %>% filter((gameId == d_t$gameId[i]) & (deliberationId != d_t$deliberationId[i])) %>% filter(position == 0) %>% pull(police_pca_pre)
+  }
+}
+
+# what's the difference between gameId and recordingRoomName? which should I use in this code?
+# is deliberationId an appropriate person-identifier?  Is it constant across disconnect/reconnects?  When/how is it assigned?
+
+#d_t
+```
+
+
+```{r}
+# d_t$position
+# 
+# d_t$alter_leader_police_additive_pre[which(d_t$position != 0)]
+# d_t$alter_nonleader_police_additive_pre[which(d_t$position != 0)]
+# 
+# d_t$alter_leader_police_pca_pre[which(d_t$position != 0)]
+# d_t$alter_nonleader_police_pca_pre[which(d_t$position != 0)]
+```
+
+
+```{r}
+d_t_nonleader <- d_t %>% filter(position!=0)
+#d_t_nonleader
+
+# d_t_nonleader$alter_leader_police_pca_pre[which(d_t_nonleader$position != 0)]
+# d_t_nonleader$alter_nonleader_police_pca_pre[which(d_t_nonleader$position != 0)]
+```
+
+
+### Leader Influence Models
+
+treatment effect: in groups that had an assigned leader, was the leader significantly more persuasive (than the non-leaders) to the non-leaders?
+
+```{r}
+lm_leaderinfluence_1 <- lm(police_pca_post ~ police_pca_pre + alter_nonleader_police_pca_pre + alter_leader_police_pca_pre, data = d_t_nonleader)
+#lm_leaderinfluence_1 %>% summary 
+
+lm_leaderinfluence_2 <- lm(police_pca_post ~ alter_nonleader_police_pca_pre + alter_leader_police_pca_pre, data = d_t_nonleader)
+#lm_leaderinfluence_2 %>% summary 
+```
+
+
+```{r}
+make_robust_se <- function(mod){
+  cov1         <- sandwich::vcovCL(mod, cluster = ~gameId)
+  robust_se    <- sqrt(diag(cov1))
+  return(robust_se)
+}
+```
+
+
+```{r, results='asis'}
+stargazer::stargazer(lm_leaderinfluence_1,
+                     lm_leaderinfluence_2,
+                     type = "text",
+                     se = list(make_robust_se(lm_leaderinfluence_1),make_robust_se(lm_leaderinfluence_2)))
+
+```
+
+
+## Descriptive Analysis of Influence
+
+Model influence as a latent force-multiplier?
+
+
+```{r}
+library(rstan)
+options(mc.cores = 2)
+```
+
+
+### Leader treatment only
+
+```{r}
+# Clean data for leader-treatment-only model
+d_clean <- d %>% filter(!is.na(gameId))
+bad_game_ids <- d_clean %>% filter(is.na(police_pca_pre) | is.na(police_pca_post)) %>% pull(gameId)
+d_clean <- d_clean %>% filter(!gameId %in% bad_game_ids)
+d_clean <- d_clean %>% filter(gameId != "01GWMVKGSJ61RGH3KRTQ21EH01")
+#d_clean
+
+d_clean$gender[which(is.na(d_clean$gender))] <- rep("not_provided", sum(is.na(d_clean$gender))) #assume everyone who didn't provide a gender is not male (this is wrong and bad, fix this later)
+
+alter_1 <- rep(NA, nrow(d_clean))
+alter_2 <- rep(NA, nrow(d_clean))
+for (i in 1:nrow(d_clean)){
+  alters_deliberationIds <- d_clean %>% filter(gameId == d_clean$gameId[i] & deliberationId != d_clean$deliberationId[i]) %>% pull(deliberationId)
+  try(alter_1[i] <- which(d_clean$deliberationId == alters_deliberationIds[1]), silent = T)
+  try(alter_2[i] <- which(d_clean$deliberationId == alters_deliberationIds[2]), silent = T)
+}
+
+stan_dat <- list(N = nrow(d_clean),
+                 pre = d_clean$police_pca_pre,
+                 post = d_clean$police_pca_post,
+                 alter_1 = alter_1,
+                 alter_2 = alter_2,
+                 is_leader = d_clean$group_treatment==1 & d_clean$position==0,
+                 has_leader = d_clean$group_treatment==1
+                 )
+#stan_dat
+```
+
+
+```{stan, output.var="leader_treatment"}
+data {
+  int<lower=1> N;                  //number of data points
+  real pre[N];     //outcome: post-discussion attitude scale
+  real post[N];     //outcome: post-discussion attitude scale
+  int<lower=1> alter_1[N];     //alter 1 id (maybe N-1?)
+  int<lower=1> alter_2[N];     //alter 2 id (maybe N-1?)
+  int<lower=0,upper=1> is_leader[N];     //leader indicator
+  int<lower=0,upper=1> has_leader[N];     //leader indicator
+}
+
+parameters {
+  real post_intercept;           // intercept of post-discussion attitude model
+  real aw_intercept;             // alter weight intercept
+  real aw_leader;             // alter weight leader (0 if group untreated)
+  real self_weight;             // self weight
+  real has_leader_intercept;
+  real<lower=0> sigma;//disturbance to outcome model (need to cluster this)
+}
+
+model {
+  real alter_1_weight;
+  real alter_2_weight;
+  
+  for (i in 1:N){
+    alter_1_weight = aw_intercept + aw_leader * is_leader[alter_1[i]];
+    alter_2_weight = aw_intercept + aw_leader * is_leader[alter_2[i]];
+    post[i] ~ normal(post_intercept + has_leader[i] * has_leader_intercept + pre[i] * self_weight + pre[alter_1[i]] * alter_1_weight + pre[alter_2[i]] * alter_2_weight, sigma);
+  }
+}
+
+```
+
+
+```{r}
+#estimate
+test_fit <- sampling(leader_treatment,
+                 data = stan_dat,
+                 chains = 2, iter = 1000)
+
+pairs(test_fit, pars = c("aw_intercept", "aw_leader", "post_intercept", "self_weight"))
+plot(test_fit)
+```
+
+
+
+```{r}
+d_clean <- d %>% filter(!is.na(gameId))# %>% filter(!is.na(police_pca_pre)) %>% filter(!is.na(police_pca_post))
+
+bad_game_ids <- d_clean %>% filter(is.na(police_pca_pre) | is.na(police_pca_post) | is.na(pid_strength)) %>% pull(gameId)
+
+d_clean <- d_clean %>% filter(!gameId %in% bad_game_ids)
+
+d_clean <- d_clean %>% filter(gameId != "01GWMVKGSJ61RGH3KRTQ21EH01")
+#d_clean
+
+#d_clean$pid_strength[which(is.na(d_clean$pid_strength))] <- 3 #hack: treat the DSA person as a "very strong partisan"
+#d_clean$pid_strength[which(is.na(d_clean$pid_strength))] <- 0
+
+d_clean$gender[which(is.na(d_clean$gender))] <- rep("not_provided", sum(is.na(d_clean$gender))) #assume everyone who didn't provide a gender is not male (this is wrong and bad, fix this later)
+```
+
+
+```{r}
+alter_1 <- rep(NA, nrow(d_clean))
+alter_2 <- rep(NA, nrow(d_clean))
+for (i in 1:nrow(d_clean)){
+  alters_deliberationIds <- d_clean %>% filter(gameId == d_clean$gameId[i] & deliberationId != d_clean$deliberationId[i]) %>% pull(deliberationId)
+  try(alter_1[i] <- which(d_clean$deliberationId == alters_deliberationIds[1]), silent = T)
+  try(alter_2[i] <- which(d_clean$deliberationId == alters_deliberationIds[2]), silent = T)
+}
+
+stan_dat <- list(N = nrow(d_clean),
+                 pre = d_clean$police_pca_pre,
+                 post = d_clean$police_pca_post,
+                 alter_1 = alter_1,
+                 alter_2 = alter_2,
+                 is_leader = d_clean$group_treatment==1 & d_clean$position==0,
+                 has_leader = d_clean$group_treatment==1,
+                 male = d_clean$gender=="male",
+                 pid_strength = d_clean$pid_strength
+                 )
+
+stan_dat
+```
+
+
+```{stan, output.var="demographics"}
+// still need to cluster SEs in this
+data {
+  int<lower=1> N;                  //number of data points
+  real pre[N];     //outcome: post-discussion attitude scale
+  real post[N];     //outcome: post-discussion attitude scale
+  int<lower=1> alter_1[N];     //alter 1 id (maybe N-1?)
+  int<lower=1> alter_2[N];     //alter 2 id (maybe N-1?)
+  int<lower=0,upper=1> male[N];     //male gender indicator
+  int<lower=0> pid_strength[N];     //
+}
+
+parameters {
+  real post_intercept;           // intercept of post-discussion attitude model
+  real aw_intercept;             // alter weight intercept
+  real aw_male;             // alter weight male gender
+  real aw_pid_strength;             // alter weight male gender
+  real self_weight;             // self weight
+  real<lower=0> sigma;//disturbance to outcome model (for clustering, allow sigma to vary across groups?)
+}
+
+model {
+  real alter_1_weight;
+  real alter_2_weight;
+  
+  for (i in 1:N){
+    alter_1_weight = aw_intercept + aw_male * male[alter_1[i]] + aw_pid_strength * pid_strength[alter_1[i]];
+    alter_2_weight = aw_intercept + aw_male * male[alter_2[i]] + aw_pid_strength * pid_strength[alter_2[i]];
+    post[i] ~ normal(post_intercept + pre[i] * self_weight + pre[alter_1[i]] * alter_1_weight + pre[alter_2[i]] * alter_2_weight, sigma);
+  }
+}
+
+```
+
+
+```{r}
+test_fit <- sampling(demographics,
+                 data = stan_dat,
+                 chains = 2, iter = 1000)
+#saveRDS(test_fit, "bi_obs_influence_fit_1k.rds")
+
+pairs(test_fit, pars = c("aw_intercept", "aw_male", "post_intercept", "self_weight"))
+plot(test_fit)
+```
+
+
+
+# With Leader Treatment
+
+Version that includes the leader treatment, in addition to gender and pid strength
+
+```{stan, output.var="treatment_and_demos"}
+// this may be an appropriate way to model leader effects using the pooled sample, but I think we don't have enough observations to estimate this rn
+// still need to cluster SEs in this
+data {
+  int<lower=1> N;                  //number of data points
+  real pre[N];     //outcome: post-discussion attitude scale
+  real post[N];     //outcome: post-discussion attitude scale
+  int<lower=1> alter_1[N];     //alter 1 id (maybe N-1?)
+  int<lower=1> alter_2[N];     //alter 2 id (maybe N-1?)
+  int<lower=0,upper=1> male[N];     //male gender indicator
+  int<lower=0> pid_strength[N];     //
+  int<lower=0,upper=1> is_leader[N];     //leader indicator
+  int<lower=0,upper=1> has_leader[N];     //leader indicator
+}
+
+parameters {
+  real post_intercept;           // intercept of post-discussion attitude model
+  real aw_intercept;             // alter weight intercept
+  real aw_male;             // alter weight male gender
+  real aw_pid_strength;             // alter weight male gender
+  real aw_leader;             // alter weight leader (0 if group untreated)
+  real self_weight;             // self weight
+  real has_leader_intercept;
+  real<lower=0> sigma;//disturbance to outcome model (need to cluster this)
+}
+
+model {
+  real alter_1_weight;
+  real alter_2_weight;
+  
+  for (i in 1:N){
+    alter_1_weight = aw_intercept + aw_male * male[alter_1[i]] + aw_pid_strength * pid_strength[alter_1[i]] + aw_leader * is_leader[alter_1[i]];
+    alter_2_weight = aw_intercept + aw_male * male[alter_2[i]] + aw_pid_strength * pid_strength[alter_2[i]] + aw_leader * is_leader[alter_2[i]];
+    post[i] ~ normal(post_intercept + has_leader[i] * has_leader_intercept + pre[i] * self_weight + pre[alter_1[i]] * alter_1_weight + pre[alter_2[i]] * alter_2_weight, sigma);
+  }
+}
+
+```
+
+
+```{r}
+test_fit <- sampling(treatment_and_demos,
+                 data = stan_dat,
+                 #init = init_1,
+                 chains = 2, iter = 1000)
+#saveRDS(test_fit, "bi_obs_exp_influence_fit_1k.rds")
+
+pairs(test_fit, pars = c("aw_intercept", "aw_male", "has_leader_intercept", "aw_leader", "post_intercept", "self_weight"))
+#pairs(test_fit, pars = c("aw_intercept", "has_leader_intercept", "aw_leader", "post_intercept"))
+```
+
+
+```{r}
+pairs(test_fit, pars = c("has_leader_intercept", "aw_leader"))
+```
+
+
+```{r}
+plot(test_fit)
+```
+
+
+
+# Indicator Version of fully-saturated
+
+Replace alters' pre-opinions with signed indicators for alter's pre positions relative to the ego
+
+```{stan, output.var="treatment_and_demos_indicator"}
+// this may be an appropriate way to model leader effects using the pooled sample, but I think we don't have enough observations to estimate this rn
+// still need to cluster SEs in this
+
+functions {
+  // ... function declarations and definitions ...
+  int signnum(real x) {
+    return x < 0 ? -1 : x > 0;
+  }
+}
+
+data {
+  int<lower=1> N;                  //number of data points
+  real pre[N];     //outcome: post-discussion attitude scale
+  real post[N];     //outcome: post-discussion attitude scale
+  int<lower=1> alter_1[N];     //alter 1 id (maybe N-1?)
+  int<lower=1> alter_2[N];     //alter 2 id (maybe N-1?)
+  int<lower=0,upper=1> male[N];     //male gender indicator
+  int<lower=0> pid_strength[N];     //
+  int<lower=0,upper=1> is_leader[N];     //leader indicator
+  int<lower=0,upper=1> has_leader[N];     //leader indicator
+}
+
+parameters {
+  real post_intercept;           // intercept of post-discussion attitude model
+  real aw_intercept;             // alter weight intercept
+  real aw_male;             // alter weight male gender
+  real aw_pid_strength;             // alter weight male gender
+  real aw_leader;             // alter weight leader (0 if group untreated)
+  real self_weight;             // self weight
+  real has_leader_intercept;
+  real<lower=0> sigma;//disturbance to outcome model (need to cluster this)
+}
+
+model {
+  real alter_1_weight;
+  real alter_2_weight;
+  
+  for (i in 1:N){
+    alter_1_weight = aw_intercept + aw_male * male[alter_1[i]] + aw_pid_strength * pid_strength[alter_1[i]] + aw_leader * is_leader[alter_1[i]];
+    alter_2_weight = aw_intercept + aw_male * male[alter_2[i]] + aw_pid_strength * pid_strength[alter_2[i]] + aw_leader * is_leader[alter_2[i]];
+    post[i] ~ normal(post_intercept + has_leader[i] * has_leader_intercept + pre[i] * self_weight + signnum(pre[alter_1[i]] - pre[i]) * alter_1_weight + signnum(pre[alter_2[i]] - pre[i]) * alter_2_weight, sigma);
+  }
+}
+
+```
+
+
+```{r}
+test_fit <- sampling(treatment_and_demos_indicator,
+                 data = stan_dat,
+                 #init = init_1,
+                 chains = 2, iter = 1000)
+#saveRDS(test_fit, "bi_obs_exp_influence_indicator_fit_1k.rds")
+
+pairs(test_fit, pars = c("aw_intercept", "aw_male", "has_leader_intercept", "aw_leader", "post_intercept", "self_weight"))
+#pairs(test_fit, pars = c("aw_intercept", "has_leader_intercept", "aw_leader", "post_intercept"))
+```
+
+
+```{r}
+pairs(test_fit, pars = c("has_leader_intercept", "aw_leader"))
+```
+
+
+```{r}
+plot(test_fit)
+```
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
